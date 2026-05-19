@@ -69,6 +69,15 @@ export const analyzeResume = async (resumeText) => {
 
   } catch (error) {
     console.error("Gemini API Error:", error);
-    throw new Error("Failed to analyze resume with AI.");
+    const errMsg = error.message || String(error);
+    const isOverloaded = errMsg.includes("503") || errMsg.toLowerCase().includes("overloaded");
+    const isRateLimited = errMsg.includes("429") || errMsg.toLowerCase().includes("rate");
+    
+    if (isOverloaded) {
+      throw new Error("Google Gemini AI is temporarily overloaded due to high traffic. Please wait 5-10 seconds and try again!");
+    } else if (isRateLimited) {
+      throw new Error("Gemini API Free Rate Limit reached. Please wait 10-15 seconds and try again!");
+    }
+    throw new Error("Failed to analyze resume with AI: " + errMsg);
   }
 };
