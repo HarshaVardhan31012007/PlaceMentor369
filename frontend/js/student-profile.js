@@ -49,6 +49,7 @@ const completionMessage = document.getElementById("completionMessage");
 // ============================
 let skills = [];
 let resumeBase64 = null;
+let isProcessingResume = false;
 
 // ============================
 // UTILITY FUNCTIONS
@@ -113,9 +114,19 @@ window.removeSkill = function (i) {
 // RESUME LOGIC
 // ============================
 resumeInput?.addEventListener("change", async (e) => {
+    if (isProcessingResume) {
+        showToast("⚠️ A resume is already being parsed! Please wait.", "warning");
+        return;
+    }
+
     const file = e.target.files[0];
     if (!file || file.type !== "application/pdf") return showToast("Only PDFs allowed!", "error");
     if (file.size > 2 * 1024 * 1024) return showToast("Max 2MB", "error");
+
+    isProcessingResume = true;
+    if (saveBtn) saveBtn.disabled = true;
+    const resetProfileBtn = document.getElementById("resetProfileBtn");
+    if (resetProfileBtn) resetProfileBtn.disabled = true;
 
     const dropArea = document.getElementById("resumeDropArea");
     
@@ -199,6 +210,9 @@ resumeInput?.addEventListener("change", async (e) => {
         showToast("❌ AI parsing failed: " + err.message, "error");
     } finally {
         document.getElementById("resumeLoadingOverlay")?.remove();
+        isProcessingResume = false;
+        if (saveBtn) saveBtn.disabled = false;
+        if (resetProfileBtn) resetProfileBtn.disabled = false;
     }
 });
 
