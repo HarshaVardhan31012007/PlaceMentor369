@@ -33,8 +33,8 @@ export const analyzeResume = async (resumeText) => {
     `;
 
     let response;
-    let retries = 3;
-    let delay = 1500;
+    let retries = 5;
+    let delay = 2000;
 
     for (let i = 0; i < retries; i++) {
       try {
