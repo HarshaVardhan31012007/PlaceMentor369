@@ -104,18 +104,77 @@ window.removeSkill = function (i) {
 // ============================
 // RESUME LOGIC
 // ============================
-resumeInput?.addEventListener("change", (e) => {
+resumeInput?.addEventListener("change", async (e) => {
     const file = e.target.files[0];
     if (!file || file.type !== "application/pdf") return alert("Only PDFs allowed!");
     if (file.size > 2 * 1024 * 1024) return alert("Max 2MB");
 
-    const reader = new FileReader();
-    reader.onload = () => {
-        resumeBase64 = reader.result;
-        showResumeUI(file.name);
-        updateCompletion();
-    };
-    reader.readAsDataURL(file);
+    const dropArea = document.getElementById("resumeDropArea");
+    const originalHTML = dropArea.innerHTML;
+    
+    // Show AI parsing loading state
+    dropArea.innerHTML = `
+        <div class="flex flex-col items-center justify-center py-4">
+            <i class="fas fa-spinner fa-spin text-4xl text-blue-500 mb-3 animate-spin"></i>
+            <p class="text-blue-600 font-bold">Assistant is reading your resume...</p>
+            <p class="text-xs text-gray-400 mt-1">AI will automatically fill your profile fields</p>
+        </div>
+    `;
+    dropArea.style.pointerEvents = "none";
+
+    const formData = new FormData();
+    formData.append("resume", file);
+
+    try {
+        const res = await fetch(`${API_BASE}/upload-resume`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${token}`
+            },
+            body: formData
+        });
+
+        if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.message || "Failed to process resume");
+        }
+
+        const data = await res.json();
+        const profile = data.student;
+
+        // Auto-fill forms based on AI extraction
+        if (profile.name) fullNameInput.value = profile.name;
+        if (profile.roll) rollInput.value = profile.roll;
+        if (profile.cgpa) cgpaInput.value = profile.cgpa;
+
+        if (profile.branch) {
+            Array.from(branchSelect.options).forEach(o => {
+                if (o.text === profile.branch || o.value === profile.branch) o.selected = true;
+            });
+        }
+
+        // Auto-fill skills
+        skills = (profile.skills || []).map(s => ({ name: s, level: "Intermediate" }));
+        renderSkills();
+
+        // Load PDF as base64 for local viewing
+        const reader = new FileReader();
+        reader.onload = () => {
+            resumeBase64 = reader.result;
+            showResumeUI(file.name);
+            updateCompletion();
+        };
+        reader.readAsDataURL(file);
+
+        alert("🎯 AI successfully parsed your resume and auto-populated your profile details!");
+
+    } catch (err) {
+        console.error("AI Parser Error:", err);
+        alert("❌ AI parsing failed: " + err.message);
+    } finally {
+        dropArea.innerHTML = originalHTML;
+        dropArea.style.pointerEvents = "auto";
+    }
 });
 
 function showResumeUI(name) {
