@@ -22,6 +22,40 @@ if (!session) {
 const { token, user } = session;
 
 // ============================
+// SOCKET.IO CONNECTION (Phase 4)
+// ============================
+let socket = null;
+let isSocketConnected = false;
+
+if (window.io && user && user.id) {
+    socket = io("http://localhost:5000");
+
+    socket.on("connect", () => {
+        console.log("🔌 Connected to Socket.io server successfully.");
+        isSocketConnected = true;
+        socket.emit("register", user.id);
+    });
+
+    socket.on("disconnect", () => {
+        console.log("🔌 Disconnected from Socket.io server.");
+        isSocketConnected = false;
+    });
+
+    socket.on("ai-completed", async (data) => {
+        console.log("🚀 Live Event received: 'ai-completed':", data);
+        
+        document.getElementById("resumeLoadingOverlay")?.remove();
+        isProcessingResume = false;
+        if (saveBtn) saveBtn.disabled = false;
+        const resetBtn = document.getElementById("resetProfileBtn");
+        if (resetBtn) resetBtn.disabled = false;
+
+        showToast("🎯 Real-time Sync: " + (data.message || "AI Analysis Complete!"), "success");
+        await loadProfile();
+    });
+}
+
+// ============================
 // PROFILE ELEMENTS
 // ============================
 const firstNameInput = document.getElementById("firstName");
@@ -152,6 +186,8 @@ resumeInput?.addEventListener("change", async (e) => {
     const formData = new FormData();
     formData.append("resume", file);
 
+    let keepLoading = false;
+
     try {
         const res = await fetch(`${API_BASE}/upload-resume`, {
             method: "POST",
@@ -180,10 +216,32 @@ resumeInput?.addEventListener("change", async (e) => {
             };
             reader.readAsDataURL(file);
             
-            // Poll for profile updates after 5 seconds
-            setTimeout(() => {
-                loadProfile();
-            }, 5000);
+            keepLoading = true;
+
+            if (isSocketConnected) {
+                console.log("🔌 Real-time notifications active. Waiting for Socket.io 'ai-completed' event...");
+                
+                // Safety timeout of 20 seconds
+                setTimeout(() => {
+                    if (isProcessingResume) {
+                        console.warn("⚠️ Socket event timed out. Falling back to manual profile fetch.");
+                        loadProfile();
+                        document.getElementById("resumeLoadingOverlay")?.remove();
+                        isProcessingResume = false;
+                        if (saveBtn) saveBtn.disabled = false;
+                        if (resetProfileBtn) resetProfileBtn.disabled = false;
+                    }
+                }, 20000);
+            } else {
+                console.warn("⚠️ Socket not connected. Falling back to 5-second polling.");
+                setTimeout(async () => {
+                    await loadProfile();
+                    document.getElementById("resumeLoadingOverlay")?.remove();
+                    isProcessingResume = false;
+                    if (saveBtn) saveBtn.disabled = false;
+                    if (resetProfileBtn) resetProfileBtn.disabled = false;
+                }, 5000);
+            }
             return;
         }
 
@@ -229,10 +287,12 @@ resumeInput?.addEventListener("change", async (e) => {
         console.error("AI Parser Error:", err);
         showToast("❌ AI parsing failed: " + err.message, "error");
     } finally {
-        document.getElementById("resumeLoadingOverlay")?.remove();
-        isProcessingResume = false;
-        if (saveBtn) saveBtn.disabled = false;
-        if (resetProfileBtn) resetProfileBtn.disabled = false;
+        if (!keepLoading) {
+            document.getElementById("resumeLoadingOverlay")?.remove();
+            isProcessingResume = false;
+            if (saveBtn) saveBtn.disabled = false;
+            if (resetProfileBtn) resetProfileBtn.disabled = false;
+        }
     }
 });
 

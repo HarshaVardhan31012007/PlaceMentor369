@@ -1,5 +1,9 @@
 // backend/server.js
 import express from "express";
+import { createServer } from "http";
+import { Server } from "socket.io";
+import { QueueEvents } from "bullmq";
+import redisConnection from "./config/redis.js";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import cors from "cors";
@@ -16,6 +20,59 @@ dotenv.config({ override: true });
 import "./workers/aiWorker.js";
 
 const app = express();
+const httpServer = createServer(app);
+
+// ✅ Initialize Socket.io
+const io = new Server(httpServer, {
+  cors: {
+    origin: true,
+    credentials: true
+  }
+});
+
+// Store connected users (Map: userId -> socketId)
+const connectedUsers = new Map();
+
+io.on("connection", (socket) => {
+  console.log(`🔌 New client connected: ${socket.id}`);
+
+  // When frontend identifies itself
+  socket.on("register", (userId) => {
+    connectedUsers.set(userId, socket.id);
+    console.log(`🔗 User ${userId} registered to socket ${socket.id}`);
+  });
+
+  socket.on("disconnect", () => {
+    // Remove from map on disconnect
+    for (const [userId, socketId] of connectedUsers.entries()) {
+      if (socketId === socket.id) {
+        connectedUsers.delete(userId);
+        break;
+      }
+    }
+    console.log(`🔌 Client disconnected: ${socket.id}`);
+  });
+});
+
+// ✅ Listen to BullMQ Global Queue Events for AI Completion
+if (redisConnection) {
+  const queueEvents = new QueueEvents('ai-analysis-queue', { connection: redisConnection });
+  queueEvents.on('completed', async ({ jobId, returnvalue }) => {
+    try {
+      // returnvalue is a JSON string of the returned object { success, userId, aiResult }
+      const result = typeof returnvalue === 'string' ? JSON.parse(returnvalue) : returnvalue;
+      if (result && result.userId) {
+        const socketId = connectedUsers.get(result.userId);
+        if (socketId) {
+          console.log(`🚀 Emitting 'ai-completed' to user ${result.userId} on socket ${socketId}`);
+          io.to(socketId).emit("ai-completed", { message: "AI Analysis Complete!" });
+        }
+      }
+    } catch (err) {
+      console.error("Error processing queue event:", err);
+    }
+  });
+}
 
 /* ============================
    GLOBAL MIDDLEWARE
@@ -68,10 +125,11 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 mongoose
-  .connect(process.env.MONGO_URI) // no options needed in Mongoose v7+
+  .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB Connected successfully");
-    app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+    // Listen with httpServer, NOT app!
+    httpServer.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
   })
   .catch((err) => {
     console.error("❌ MongoDB connection failed:", err.message);

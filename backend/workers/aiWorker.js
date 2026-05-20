@@ -47,7 +47,7 @@ if (!connection) {
             await student.save();
             console.log(`[Job ${job.id}] Student profile updated successfully in database.`);
 
-            return { success: true, aiResult };
+            return { success: true, userId, aiResult };
         } catch (error) {
             console.error(`[Job ${job.id}] Failed to process resume:`, error.message);
             throw error; // Will be caught by BullMQ and retried if configured
