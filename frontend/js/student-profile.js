@@ -167,6 +167,26 @@ resumeInput?.addEventListener("change", async (e) => {
         }
 
         const data = await res.json();
+        
+        // Handle Phase 3 Background Queue Response
+        if (data.processing) {
+            showToast("⏳ " + data.message, "success");
+            // Load PDF as base64 for local viewing immediately
+            const reader = new FileReader();
+            reader.onload = () => {
+                resumeBase64 = reader.result;
+                showResumeUI(file.name);
+                updateCompletion();
+            };
+            reader.readAsDataURL(file);
+            
+            // Poll for profile updates after 5 seconds
+            setTimeout(() => {
+                loadProfile();
+            }, 5000);
+            return;
+        }
+
         const profile = data.student;
 
         // Auto-fill forms based on AI extraction (splitting full name into first and last name)
